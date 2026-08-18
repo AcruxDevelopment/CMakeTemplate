@@ -384,5 +384,3 @@ add_exe_module(my_tool_exe OUTPUT_NAME "my-tool" DEPENDS core_lib)
 `scripts/run.sh my_tool_exe` picks it up automatically once it's built,
 and `scripts/docs.sh my_tool_exe` documents it automatically too -- both
 with zero edits anywhere outside `source/MyTool/`.
-#   C M a k e T e m p l a t e  
- 
