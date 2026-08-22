@@ -4,9 +4,9 @@ A minimal C++20 project showing a per-module CMake setup: each module owns
 a tiny, self-contained `CMakeLists.txt`, the root `CMakeLists.txt`
 discovers modules automatically, three ways to bring in third-party code
 (vendored, installed, or fetched) stay out of your warnings and your
-compile database, every module gets its own browsable documentation
-automatically the moment Doxygen is installed, and every output path is
-configured in one place.
+compile database, every module gets its own browsable documentation via a
+pinned Doxygen that's entirely opt-in (never required just to build), and
+every output path is configured in one place.
 
 ## Layout
 
@@ -15,18 +15,23 @@ CMakeLists.txt                 project setup, options, install(), discovery -- e
 Configuration.cmake             all output-path configuration -- edit to relocate anything
 cmake/BuildHelpers.cmake        module macros + discovery mechanism -- edit rarely
 cmake/Dependencies.cmake        vendoring / installed-library / FetchContent helpers -- edit rarely
-cmake/Documentation.cmake       automatic per-module Doxygen integration -- edit rarely
+cmake/Documentation.cmake       per-module Doxygen integration -- only ever LOOKS for a pinned Doxygen
+cmake/DoxygenPin.cmake          shared version/URL/hash parameters for the pinned Doxygen
+cmake/FetchDoxygen.cmake        standalone downloader (run via `cmake -P`, not during normal configure)
 source/Core/CMakeLists.txt      library module "core_lib" (SHARED), depends on fmt
 source/HelloApp/CMakeLists.txt  executable module "hello_exe", depends on vendored tiny_ansi
 source/FarewellApp/CMakeLists.txt  executable module "farewell_exe", depends on vendored tiny_case
 vendor/tiny_ansi/               header-only vendored dependency (no build of its own)
 vendor/tiny_case/               vendored dependency with its own CMakeLists.txt
-scripts/build.sh, build.bat     configure + build
+scripts/setup.sh, setup.bat     one-time: fetch pinned Doxygen, check tooling, activate git hook
+scripts/build.sh, build.bat     configure + build (never touches Doxygen or its network access)
 scripts/run.sh, run.bat         run a module by its CMake target name
 scripts/install.sh, install.bat install this project's own artifacts only
-scripts/docs.sh, docs.bat       build documentation for every module (or one)
+scripts/docs.sh, docs.bat       build documentation for every module (or one) -- needs setup.sh first
+scripts/refactor.sh, refactor.bat  auto-fix formatting/naming across this project's own code
 .clang-format, .clang-tidy      C++ style guide tooling (see "Code style & tooling" below)
 .editorconfig, .gitattributes   -- same
+.gitignore                      Visual Studio template + a block auto-synced from Configuration.cmake
 c-api/.clang-tidy               naming override template for a C API subtree, if you add one
 .githooks/pre-commit            formatting/lint pre-commit hook
 cpp-style-guide.md, TOOLING.md  the style guide itself + tooling docs
@@ -64,6 +69,7 @@ at configure time instead of editing any file:
 | `DIST_OUTPUT_DIR` | `out/dist` | Reserved for packaged/archived output (e.g. a future CPack integration) -- not populated by this project yet, but created and ready |
 | `DOCS_OUTPUT_DIR` | `out/docs` | Root of generated Doxygen documentation, one subdirectory per module |
 | `TOOLCACHE_DIR` | `.cache/tools` | Where downloaded, pinned build tools (currently just Doxygen) are cached -- kept outside `OUT_DIR` so `rm -rf out/` doesn't force a re-download |
+| `COMPILE_COMMANDS_DESTINATION` | `compile_commands.json` | Where `compile_commands.json` is copied to after every build (see "compile_commands.json / clang tooling" below) |
 | `RUNTIME_OUTPUT_SUBDIR` | `bin` | Subdirectory (inside whatever the build dir is) for executables/`.dll`/`.so` |
 | `LIBRARY_OUTPUT_SUBDIR` | `bin` | Subdirectory for shared-library artifacts (kept alongside executables so `$ORIGIN` RPATH resolves them) |
 | `ARCHIVE_OUTPUT_SUBDIR` | `lib` | Subdirectory for static/import-library artifacts |
@@ -87,6 +93,36 @@ Example -- build into a different location entirely:
 cmake -G Ninja -S . -B /tmp/my-build -DOUT_DIR=/tmp/my-out
 cmake --build /tmp/my-build
 ```
+
+### `.gitignore` stays in sync automatically
+
+`Configuration.cmake` is the single source of truth for every path above
+-- `.gitignore` doesn't hardcode its own copy of them. Every configure,
+a marked block near the bottom of `.gitignore` is regenerated from the
+*current* value of each path variable:
+
+```
+# >>> Configuration.cmake generated paths -- BEGIN (do not edit by hand; edit Configuration.cmake and reconfigure) >>>
+.cache/tools/
+compile_commands.json
+out/
+out/dist/
+out/docs/
+out/install/
+# <<< Configuration.cmake generated paths -- END <<<
+```
+
+Change `OUT_DIR` (or any of the others, permanently in `Configuration.cmake`
+or per-configure with `-D...=...`) and this block updates to match on the
+next configure -- nothing to keep in sync by hand. Everything outside the
+block is untouched: `.gitignore` ships based on GitHub's
+[`VisualStudio.gitignore`](https://github.com/github/gitignore/blob/main/VisualStudio.gitignore)
+template, and that content is never rewritten. A path is only added if it
+resolves *inside* the repo -- pointing `TOOLCACHE_DIR` somewhere else
+entirely just omits it, since `.gitignore` has nothing useful to say about
+a location outside the repository it lives in. The file is only rewritten
+when the computed block actually differs from what's already there, so a
+normal reconfigure doesn't spuriously touch its contents or mtime.
 
 ## Three ways to bring in a dependency (`cmake/Dependencies.cmake`)
 
@@ -114,21 +150,36 @@ A module `DEPENDS` on whatever target the chosen path defines (`fmt::fmt`,
 `add_lib_module`/`add_exe_module` don't need to know or care which of the
 three supplied it.
 
-## Documentation (automatic, per module, pinned Doxygen)
+## Documentation (automatic per module, pinned Doxygen, entirely opt-in)
 
 Every module registered via `add_lib_module`/`add_exe_module`/
 `add_test_module`/`add_example_module` gets its own
-[Doxygen](https://www.doxygen.nl/) documentation target automatically --
-nothing to add to a module's own `CMakeLists.txt`, and no Doxygen install
-required on your machine. This project downloads and manages its own
-pinned Doxygen (currently **1.16.1**, see `DOXYGEN_PINNED_VERSION` in
-`cmake/Documentation.cmake`) the first time you configure with
-`ENABLE_DOXYGEN` on (the default) -- it deliberately never looks for or
-uses a system-installed `doxygen`, so every machine building this project
+[Doxygen](https://www.doxygen.nl/) documentation target for free -- nothing
+to add to a module's own `CMakeLists.txt`. This project uses a pinned
+Doxygen (currently **1.16.1**, see `DOXYGEN_PINNED_VERSION` in
+`cmake/DoxygenPin.cmake`) -- it deliberately never looks for or uses a
+system-installed `doxygen`, so every machine building this project
 generates identical output regardless of what (if anything) is on `PATH`.
-The download is cached under `.cache/tools/` (`TOOLCACHE_DIR`, see
-"Output paths" above), so it only happens once per machine -- a clean
-`rm -rf out/` does not force a re-download.
+
+**Building the project never needs Doxygen.** `cmake/Documentation.cmake`
+only ever *looks* for an already-fetched pinned Doxygen under
+`.cache/tools/` (`TOOLCACHE_DIR`) -- it never downloads anything itself
+during a normal configure, so `scripts/build.sh` has no Doxygen/network
+dependency at all. Fetching it is a separate, explicit, one-time step:
+
+```bash
+scripts/setup.sh    # see "Setup" below -- fetches the pinned Doxygen once
+```
+
+Until you've run that, `scripts/docs.sh` prints a clear message instead of
+building anything -- everything else (the actual C++ project) builds
+completely normally either way:
+
+```
+Documentation isn't set up yet (or ENABLE_DOXYGEN=OFF). Run scripts/setup.sh (or setup.bat) once to fetch the pinned Doxygen, then reconfigure.
+```
+
+Once set up:
 
 ```bash
 scripts/docs.sh                # build docs for every module, prints where to open it
@@ -143,15 +194,7 @@ Output goes to `out/docs/<module>/html/index.html` (a sibling of
 `out/build/`, not nested inside it -- see "Output paths" above), plus a
 landing page at `out/docs/index.html` linking to every module.
 Documentation is **not** built as part of a normal `scripts/build.sh` --
-it's opt-in, the same way tests and examples are, since generating it on
-every compile would be wasteful. If the pinned Doxygen can't be downloaded
-(no network access, an unsupported host platform, or you passed
-`-DENABLE_DOXYGEN=OFF`), `scripts/docs.sh` prints a clear message instead
-of failing -- everything else keeps building normally either way:
-
-```
-Documentation is disabled (ENABLE_DOXYGEN=OFF, or Doxygen isn't installed). Install Doxygen and reconfigure to enable it.
-```
+it's opt-in, the same way tests and examples are.
 
 **Writing docs for a module** is just normal Doxygen comments in that
 module's headers -- e.g. `source/Core/include/core/Greeting.hpp`:
@@ -176,13 +219,13 @@ page.
 **Configuring it** -- nothing is required, but everything is overridable:
 
 ```bash
-# Disable entirely, even though Doxygen would otherwise download fine:
+# Disable entirely (docs targets print a message instead of building):
 cmake -S . -B out/build -DENABLE_DOXYGEN=OFF
 
 # Pin a different Doxygen version (also update the two SHA256 hashes in
-# cmake/Documentation.cmake to match that release's assets -- a stale
-# hash fails the configure loudly, on purpose, rather than silently
-# accepting an unexpected file):
+# cmake/DoxygenPin.cmake to match that release's assets -- a stale hash
+# fails scripts/setup.sh loudly, on purpose, rather than silently
+# accepting an unexpected file -- then re-run scripts/setup.sh):
 cmake -S . -B out/build -DDOXYGEN_PINNED_VERSION=1.17.0
 
 # Any Doxyfile tag can be set as a CMake variable, e.g. stricter output:
@@ -232,7 +275,42 @@ the full rules and rationale), enforced by the tooling described in
 | `.gitattributes` | Forces LF line endings for source files on every OS |
 | `.githooks/pre-commit` | Runs clang-format + clang-tidy on staged files before each commit; warns and skips (never blocks) if a tool isn't installed |
 
-**One-time setup per clone** to activate the hook:
+**Fixing violations automatically**, instead of hunting them down by hand:
+
+```bash
+scripts/refactor.sh              # every file under source/ and c-api/ by default
+scripts/refactor.sh source/Core  # just one file or directory
+```
+```bat
+scripts\refactor.bat
+scripts\refactor.bat source\Core
+```
+
+Runs `clang-format -i` (always) and `clang-tidy --fix` (if
+`compile_commands.json` exists -- build once first if it doesn't) across
+the given scope. The pre-commit hook only *checks*; this is the "just fix
+it" counterpart -- review the result with `git diff` afterward, same as
+any auto-formatter. This is exactly how this project's own code
+(`source/`) was brought into compliance when the toolkit was integrated --
+see the renames noted further down.
+
+With no argument, only `source/` and `c-api/` are ever scanned -- `out/`,
+`.cache/`, `vendor/`, and `.git/` are never walked, so this can't
+accidentally spend minutes reformatting/analyzing a fetched dependency's
+entire source tree (verified against `out/build/_deps/fmt-src/`
+specifically, since that's what triggered this exact problem before the
+fix). Passing an explicit scope takes it as given: `refactor.sh` still
+excludes `vendor`/`out`/`.cache`/`.git` defensively if your scope happens
+to overlap with them; `refactor.bat` does not (its Windows batch
+equivalent of that filter turned out to be unreliable to verify, so it
+was removed rather than shipped uncertain -- pick a scope that doesn't
+overlap with those directories, which is the normal case anyway, e.g.
+`source\Core`).
+
+**One-time setup per clone** to activate the hook -- `scripts/setup.sh` /
+`setup.bat` does this for you (see "Setup" below) along with fetching the
+pinned Doxygen and checking for clang-format/clang-tidy; the two commands
+it runs for the hook specifically are:
 
 ```bash
 chmod +x .githooks/pre-commit
@@ -310,16 +388,45 @@ verified, not assumed).
 
 CMake >= 3.25, Ninja, a C++20 compiler (GCC/Clang/MSVC), `git` (for
 FetchContent's `GIT_REPOSITORY`-based dependencies like `fmt`), and
-network access the first time you configure (also needed for the pinned
-Doxygen download -- both are cached afterward, see "Output paths" and
-"Documentation" above). Nothing else to install: Doxygen is downloaded
-and pinned automatically, not a system dependency.
-[Graphviz](https://graphviz.org/) is optional for Doxygen call graphs, and
+network access the first time you configure (for `fmt`, cached afterward
+under `out/build/_deps`). That's everything the *build* needs -- Doxygen
+is **not** in this list: `scripts/build.sh` never downloads or looks for
+it (see "Documentation" above). [Graphviz](https://graphviz.org/) is
+optional for Doxygen call graphs, and
 [clang-format](https://clang.llvm.org/docs/ClangFormat.html)/
 [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) are optional for
-the pre-commit hook (see "Code style & tooling" above) -- both are
-detected, not pinned, since they're editor/workflow tools rather than
-part of the build itself.
+the pre-commit hook and `scripts/refactor.sh` (see "Code style & tooling"
+above) -- both are detected, not pinned, since they're editor/workflow
+tools rather than part of the build itself. `scripts/setup.sh` (below)
+checks for both and prints install guidance if either is missing.
+
+## Setup
+
+Optional, and separate from building (see "Requirements" and
+"Documentation" above) -- run once per clone, or any time you want to
+pick up a newer pinned Doxygen version after bumping
+`DOXYGEN_PINNED_VERSION`:
+
+```bash
+scripts/setup.sh
+```
+```bat
+scripts\setup.bat
+```
+
+Does three things, each independent of the others:
+
+1. Fetches the pinned Doxygen (`cmake/FetchDoxygen.cmake`) -- needed for
+   `scripts/docs.sh`, not for building the project.
+2. Checks for `clang-format`/`clang-tidy` on `PATH` and prints
+   OS-appropriate install guidance if either is missing (never
+   auto-installs -- that would need assumptions about your package
+   manager and elevated privileges this script shouldn't assume it has).
+3. Activates the pre-commit hook for this clone, if it's a git repository
+   (`git config core.hooksPath .githooks`).
+
+Safe to re-run any time -- each step is a no-op if there's nothing to do
+(e.g. the pinned Doxygen is already cached).
 
 ## Build
 
