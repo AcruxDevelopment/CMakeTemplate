@@ -18,6 +18,7 @@ This guide is split into two parts:
    - [Headers as Public API: Keep Implementation Types Out](#headers-as-public-api-keep-implementation-types-out)
    - [Templates](#templates)
      - [Implementing Templates (Project Standard)](#implementing-templates-project-standard)
+   - [Class Member Organization](#class-member-organization)
 7. [Include Directive Order](#7-include-directive-order)
 8. [Line Length](#8-line-length)
 9. [Comments](#9-comments)
@@ -449,6 +450,38 @@ namespace storage
 
 > **See also:** [Library Linking and Runtime Loading](#11-library-linking-and-runtime-loading) — the Pimpl idiom above exists mainly to satisfy the ABI constraints described there · [Part II: C API Style](#part-ii-c-api-style) — the `.h`/`.hpp` split introduced here is defined in full there.
 
+### Class Member Organization
+
+- **Member order: `public`, then `protected`, then `private`.** Group each access level together, in that order. The widest audience — everyone who includes the header — reads what's relevant to them (the public interface) first, without wading through implementation details to find it. Don't reopen an access specifier further down "for organization"; interleaving defeats the ordering rule's purpose.
+- **Avoid inline member function definitions in the class body.** Declare the member in the class; define its body separately — out-of-line in the matching `.cpp` for an ordinary class (see the `NetworkManager` example in [Header Files](#6-header-files) above), or out-of-line further down the same header for a template member (see [Implementing Templates](#implementing-templates-project-standard) above). This keeps the class body itself a clean, scannable interface instead of a mix of signatures and implementation.
+  - **Exception:** a genuinely trivial one-line body (a plain getter, a one-expression forwarding call) may stay inline in the class — the same exception already noted for templates above.
+- **Inline template members go at the bottom of their access section.** When a class mixes ordinary members with template members that use the trivial-one-liner exception just above, keep the plain declarations together at the top of each `public`/`protected`/`private` block, and place the inline template members after them, at the bottom of that same block — not interleaved. A reader scanning the interface sees the plain signatures first; the inline implementation detail comes last, where it doesn't interrupt that scan.
+
+```cpp
+class NetworkManager
+{
+public:
+	NetworkManager();
+	~NetworkManager();
+
+	void connectToServer();
+	bool isConnected() const;
+
+	// Inline template member (trivial-one-liner exception, see Templates
+	// above) -- kept at the bottom of this access section rather than
+	// interleaved with the plain declarations above.
+	template <typename T> T configValue() const { return static_cast<T>(m_connectionTimeout); }
+
+protected:
+	virtual void onDisconnected();
+
+private:
+	int m_connectionTimeout;
+};
+```
+
+None of this is mechanically enforced — `readability-redundant-inline-specifier` (see `.clang-tidy`) catches one narrow related mistake (a redundant explicit `inline` keyword) but not the member-order or inline-body rules themselves. See TOOLING.md.
+
 ---
 
 ## 7. Include Directive Order
@@ -486,21 +519,34 @@ Group includes into blocks, separated by a blank line, in the following order. W
 ## 8. Line Length
 
 - Prefer a maximum of **100 characters** per line.
-- Break long function signatures with one parameter per line, indented once, if needed.
+- **Do not wrap parameters onto their own line.** Keep a function's parameter list together — on the declaration line if it fits, otherwise packed as tightly as the line allows on a continuation line. Never lay parameters out one per line; that turns a short signature into a tall list a reader has to scroll past to see the return type and name.
+  - `clang-format` enforces the "never one-per-line" part. It can't force a genuinely long signature to fit within 100 characters without wrapping at all — that would need line length limits disabled project-wide, which would also stop ordinary long expressions and comments from ever wrapping, so it isn't done. If a signature is long enough that even packing parameters together still overflows, let it overflow rather than reach for one-per-line as the fallback.
 
 ---
 
 ## 9. Comments
 
-- Use `//` for single-line comments.
-- Use `/** ... */` (Doxygen-style) for documenting public API functions and classes.
+- **Document symbols with Doxygen-style comments, never a plain `//`.** Any comment documenting a function, class, struct, enum, member variable, or macro — explaining what it *is* or *does*, as opposed to annotating a line of implementation — uses `///` or `/** ... */`. This is what makes the project's generated documentation (see the Doxygen integration) actually useful instead of a bare list of undocumented signatures.
+- **`///` for most documentation; `/** ... */` for longer, multi-paragraph explanations.** Both are valid Doxygen syntax — pick based on length, not per-file preference.
+- **Plain `//` is still correct for everything that isn't documenting a symbol** — a note on a tricky line inside a function body, a `// TODO`, a block disabled during debugging. The rule above is about comments attached to a declaration, not every comment everywhere.
+
+```cpp
+/// Establishes a connection to the configured server.
+/// @return true if the connection succeeded.
+bool connectToServer();
+```
 
 ```cpp
 /**
- * Establishes a connection to the configured server.
- * @return true if the connection succeeded.
+ * Parses and validates a server configuration blob.
+ *
+ * Accepts either JSON or the legacy INI format; the format is
+ * auto-detected from the first non-whitespace byte.
+ *
+ * @param raw  the raw configuration bytes, in either supported format.
+ * @return     a parsed Config, or std::nullopt if raw is malformed.
  */
-bool connectToServer();
+std::optional<Config> parseConfig(std::string_view raw);
 ```
 
 ---
@@ -584,6 +630,23 @@ How a component is built and linked shapes how strictly some of the above rules 
 
 - Mark single-argument constructors `explicit` unless implicit conversion is intended.
 - Prefer `const` correctness everywhere it applies.
+- **Leave a blank line after an early exit** — a `return`, `break`, or `continue` statement, or a block whose last statement is one of these — whenever more code follows at that same level. It visually marks where the early-exit path ends and the normal-case code begins. Skip the blank line if the statement (or its block) is the last thing in its own enclosing function or loop; there's nothing after it to separate from.
+  - Not enforced by `clang-format` or `clang-tidy` — neither has a check for this. It's a code-review convention.
+
+```cpp
+void process(const std::vector<int>& values)
+{
+	if (values.empty())
+	{
+		return;
+	}
+
+	for (int value : values)
+	{
+		accumulate(value);
+	}
+}
+```
 
 ---
 

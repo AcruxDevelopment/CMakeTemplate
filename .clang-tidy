@@ -7,9 +7,19 @@
 # the closest .clang-tidy file up the directory tree, so nesting one there
 # gives that subtree different naming rules without affecting the rest of
 # the project. See TOOLING.md for what this file can't check.
+#
+# readability-redundant-inline-specifier is a narrow, complementary aid for
+# the "avoid inline member definitions" rule in §6 (Class Member
+# Organization): it only catches an explicit `inline` keyword that's
+# already redundant (e.g. on a function defined in the class body, which
+# is implicitly inline regardless). It does not catch — and nothing in
+# this file catches — an inline definition that omits the keyword
+# entirely, which is the actual, common case the style guide rule is
+# about; that one stays a code-review judgment call. See TOOLING.md.
 Checks: >
   -*,
   readability-identifier-naming,
+  readability-redundant-inline-specifier,
   modernize-use-nullptr,
   modernize-use-override,
   modernize-use-equals-default,

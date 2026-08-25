@@ -73,20 +73,51 @@ include_guard(GLOBAL)
 option(ENABLE_DOXYGEN "Generate per-module Doxygen documentation using a pinned, project-managed Doxygen (run scripts/setup.sh once to fetch it)" ON)
 
 if(ENABLE_DOXYGEN)
-    # Loads the FindDoxygen module (defines doxygen_add_docs(), used
-    # below) and, as a side effect, searches the system for `dot`
-    # (Graphviz) for call graphs -- an optional, system-detected
-    # enhancement, unrelated to the pinned doxygen executable itself.
-    find_package(Doxygen QUIET OPTIONAL_COMPONENTS dot)
-
     include("${CMAKE_CURRENT_LIST_DIR}/DoxygenPin.cmake")
 
-    if(EXISTS "${DOXYGEN_PIN_EXECUTABLE}")
-        # Override whatever (if anything) find_package(Doxygen) found
-        # above -- this project never uses a system-installed doxygen.
-        set(DOXYGEN_EXECUTABLE "${DOXYGEN_PIN_EXECUTABLE}" CACHE FILEPATH "Pinned Doxygen executable (never the system's)" FORCE)
-        set(DOXYGEN_VERSION "${DOXYGEN_PINNED_VERSION}")
+    if(NOT DOXYGEN_PIN_PLATFORM_SUPPORTED)
+        message(WARNING "No pinned Doxygen ${DOXYGEN_PINNED_VERSION} binary is configured for this "
+                         "host platform. Install Doxygen ${DOXYGEN_PINNED_VERSION} manually, make sure "
+                         "it's on PATH or pass -DDOXYGEN_EXECUTABLE=/path/to/doxygen, or extend "
+                         "cmake/DoxygenPin.cmake with a download URL + hash for this platform.")
+        set(ENABLE_DOXYGEN OFF)
+    elseif(NOT EXISTS "${DOXYGEN_PIN_EXECUTABLE}")
+        # Not fetched yet -- see the file header. Deliberately not a
+        # message() here: this is the normal, expected state before
+        # scripts/setup.sh has ever run, not something to warn about.
+        set(ENABLE_DOXYGEN OFF)
     else()
+        # Pre-seed DOXYGEN_EXECUTABLE with our pinned path *before*
+        # find_package(Doxygen) runs, rather than overriding it
+        # afterward. find_program() (which find_package uses internally)
+        # does not re-search when the cache variable already holds a
+        # valid path -- so this makes find_package() treat our pinned
+        # copy as the one it found, and run its own normal success path
+        # using it: creating the Doxygen::doxygen imported target,
+        # determining DOXYGEN_VERSION, and generating the Doxyfile
+        # template doxygen_add_docs() needs. All of that only happens as
+        # a side effect of find_package() succeeding -- overriding
+        # DOXYGEN_EXECUTABLE *after* calling it (the previous approach
+        # here) leaves those steps never having run at all, which
+        # doxygen_add_docs() then fails on. This way we don't have to
+        # reimplement any of find_package's own (undocumented, and
+        # confirmed version-dependent -- CMake 3.28 and 4.3 both hit
+        # this differently) internal machinery ourselves.
+        set(DOXYGEN_EXECUTABLE "${DOXYGEN_PIN_EXECUTABLE}" CACHE FILEPATH "Pinned Doxygen executable (never the system's)" FORCE)
+    endif()
+endif()
+
+if(ENABLE_DOXYGEN)
+    # Also searches for `dot` (Graphviz) for call graphs -- an optional,
+    # system-detected enhancement, unrelated to the doxygen executable
+    # itself, which is pre-seeded above to always resolve to our pinned
+    # copy rather than a system one.
+    find_package(Doxygen QUIET OPTIONAL_COMPONENTS dot)
+
+    if(NOT DOXYGEN_FOUND)
+        message(WARNING "Pre-seeding DOXYGEN_EXECUTABLE with the pinned Doxygen at "
+                         "${DOXYGEN_PIN_EXECUTABLE} did not result in find_package(Doxygen) "
+                         "succeeding. Documentation will be disabled for this configure.")
         set(ENABLE_DOXYGEN OFF)
     endif()
 endif()
