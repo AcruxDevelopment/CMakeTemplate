@@ -1,15 +1,18 @@
 @echo off
 REM One-time (or re-run any time) environment setup for this template:
 REM
-REM   1. Fetches the pinned Doxygen (cmake\FetchDoxygen.cmake) -- NOT
+REM   1. Fetches the pinned ninja (cmake\FetchNinja.cmake) -- used by
+REM      scripts\build.bat if found (see there); a system ninja still
+REM      works fine too, this just avoids needing one installed at all.
+REM   2. Fetches the pinned Doxygen (cmake\FetchDoxygen.cmake) -- NOT
 REM      required to build the project itself (see cmake\Documentation.cmake),
 REM      only to run scripts\docs.bat afterward.
-REM   2. Checks for clang-format/clang-tidy (used by scripts\refactor.bat and
+REM   3. Checks for clang-format/clang-tidy (used by scripts\refactor.bat and
 REM      .githooks\pre-commit) and prints install guidance if either is
 REM      missing -- these aren't auto-installed, since doing so would need
 REM      assumptions about your package manager/installer this script
 REM      shouldn't assume it has.
-REM   3. Activates the pre-commit hook (.githooks\pre-commit) for this
+REM   4. Activates the pre-commit hook (.githooks\pre-commit) for this
 REM      clone, if it's a git repository.
 REM
 REM Usage (from the project root):
@@ -24,6 +27,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo ==^> Fetching pinned ninja (cmake\FetchNinja.cmake)
+cmake -P cmake\FetchNinja.cmake
+if errorlevel 1 exit /b 1
+
+echo.
 echo ==^> Fetching pinned Doxygen (cmake\FetchDoxygen.cmake)
 cmake -P cmake\FetchDoxygen.cmake
 if errorlevel 1 exit /b 1
@@ -71,5 +79,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo ==^> Setup complete. scripts\docs.bat is ready to use.
+echo ==^> Setup complete. scripts\build.bat and scripts\docs.bat are ready to use.
 exit /b 0

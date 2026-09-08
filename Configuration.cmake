@@ -25,7 +25,7 @@
 #                                       (cmake/Documentation.cmake).
 #
 # One thing lives outside OUT_DIR on purpose: .cache/tools/ (TOOLCACHE_DIR)
-# caches downloaded, pinned build tools (currently a pinned Doxygen), kept
+# caches downloaded, pinned build tools (currently Ninja and Doxygen), kept
 # separate so a clean `rm -rf out/` doesn't force a re-download.
 #
 # .gitignore is kept in sync with the paths below automatically, every
@@ -60,7 +60,7 @@ set(COMPILE_COMMANDS_DESTINATION "${CMAKE_SOURCE_DIR}/compile_commands.json" CAC
 # it separate means a clean `rm -rf out/` (a normal "start fresh" gesture)
 # doesn't force a re-download.
 set(TOOLCACHE_DIR "${CMAKE_SOURCE_DIR}/.cache/tools" CACHE PATH
-    "Where pinned build tools (currently just a downloaded Doxygen) are cached, kept separate from OUT_DIR")
+    "Where pinned build tools (currently Ninja and Doxygen) are cached, kept separate from OUT_DIR")
 
 # out/dist/ is reserved (see the header comment above) and nothing writes
 # to it yet, so it's created eagerly here -- otherwise it simply wouldn't

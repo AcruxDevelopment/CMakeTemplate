@@ -5,8 +5,9 @@ a tiny, self-contained `CMakeLists.txt`, the root `CMakeLists.txt`
 discovers modules automatically, three ways to bring in third-party code
 (vendored, installed, or fetched) stay out of your warnings and your
 compile database, every module gets its own browsable documentation via a
-pinned Doxygen that's entirely opt-in (never required just to build), and
-every output path is configured in one place.
+pinned Doxygen that's entirely opt-in (never required just to build),
+Ninja itself is pinned and fetched the same way with a graceful fallback
+if it's unavailable, and every output path is configured in one place.
 
 ## Layout
 
@@ -18,13 +19,15 @@ cmake/Dependencies.cmake        vendoring / installed-library / FetchContent hel
 cmake/Documentation.cmake       per-module Doxygen integration -- only ever LOOKS for a pinned Doxygen
 cmake/DoxygenPin.cmake          shared version/URL/hash parameters for the pinned Doxygen
 cmake/FetchDoxygen.cmake        standalone downloader (run via `cmake -P`, not during normal configure)
+cmake/NinjaPin.cmake            shared version/URL/hash parameters for the pinned Ninja
+cmake/FetchNinja.cmake          standalone downloader (run via `cmake -P`, not during normal configure)
 source/Core/CMakeLists.txt      library module "core_lib" (SHARED), depends on fmt
 source/HelloApp/CMakeLists.txt  executable module "hello_exe", depends on vendored tiny_ansi
 source/FarewellApp/CMakeLists.txt  executable module "farewell_exe", depends on vendored tiny_case
 vendor/tiny_ansi/               header-only vendored dependency (no build of its own)
 vendor/tiny_case/               vendored dependency with its own CMakeLists.txt
-scripts/setup.sh, setup.bat     one-time: fetch pinned Doxygen, check tooling, activate git hook
-scripts/build.sh, build.bat     configure + build (never touches Doxygen or its network access)
+scripts/setup.sh, setup.bat     one-time: fetch pinned Ninja + Doxygen, check tooling, activate git hook
+scripts/build.sh, build.bat     configure + build -- prefers a pinned Ninja, falls back gracefully
 scripts/run.sh, run.bat         run a module by its CMake target name
 scripts/install.sh, install.bat install this project's own artifacts only
 scripts/docs.sh, docs.bat       build documentation for every module (or one) -- needs setup.sh first
@@ -68,7 +71,7 @@ at configure time instead of editing any file:
 | `INSTALL_OUTPUT_DIR` | `out/install` | Root of the `cmake --install` tree, one subdirectory per `DIST_TARGET` |
 | `DIST_OUTPUT_DIR` | `out/dist` | Reserved for packaged/archived output (e.g. a future CPack integration) -- not populated by this project yet, but created and ready |
 | `DOCS_OUTPUT_DIR` | `out/docs` | Root of generated Doxygen documentation, one subdirectory per module |
-| `TOOLCACHE_DIR` | `.cache/tools` | Where downloaded, pinned build tools (currently just Doxygen) are cached -- kept outside `OUT_DIR` so `rm -rf out/` doesn't force a re-download |
+| `TOOLCACHE_DIR` | `.cache/tools` | Where downloaded, pinned build tools (currently Ninja and Doxygen) are cached -- kept outside `OUT_DIR` so `rm -rf out/` doesn't force a re-download |
 | `COMPILE_COMMANDS_DESTINATION` | `compile_commands.json` | Where `compile_commands.json` is copied to after every build (see "compile_commands.json / clang tooling" below) |
 | `RUNTIME_OUTPUT_SUBDIR` | `bin` | Subdirectory (inside whatever the build dir is) for executables/`.dll`/`.so` |
 | `LIBRARY_OUTPUT_SUBDIR` | `bin` | Subdirectory for shared-library artifacts (kept alongside executables so `$ORIGIN` RPATH resolves them) |
@@ -386,13 +389,14 @@ verified, not assumed).
 
 ## Requirements
 
-CMake >= 3.25, Ninja, a C++20 compiler (GCC/Clang/MSVC), `git` (for
+CMake >= 3.25, a C++20 compiler (GCC/Clang/MSVC), `git` (for
 FetchContent's `GIT_REPOSITORY`-based dependencies like `fmt`), and
 network access the first time you configure (for `fmt`, cached afterward
-under `out/build/_deps`). That's everything the *build* needs -- Doxygen
-is **not** in this list: `scripts/build.sh` never downloads or looks for
-it (see "Documentation" above). [Graphviz](https://graphviz.org/) is
-optional for Doxygen call graphs, and
+under `out/build/_deps`). Notably **not** in this list: Ninja and Doxygen
+are both pinned and fetched automatically (see "Setup" below), not system
+dependencies, and `scripts/build.sh` warns rather than fails if Ninja
+isn't available at all (see "Build" below).
+[Graphviz](https://graphviz.org/) is optional for Doxygen call graphs, and
 [clang-format](https://clang.llvm.org/docs/ClangFormat.html)/
 [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) are optional for
 the pre-commit hook and `scripts/refactor.sh` (see "Code style & tooling"
@@ -402,9 +406,9 @@ checks for both and prints install guidance if either is missing.
 
 ## Setup
 
-Optional, and separate from building (see "Requirements" and
+Optional, and separate from building (see "Requirements", "Build", and
 "Documentation" above) -- run once per clone, or any time you want to
-pick up a newer pinned Doxygen version after bumping
+pick up a newer pinned version after bumping `NINJA_PINNED_VERSION` or
 `DOXYGEN_PINNED_VERSION`:
 
 ```bash
@@ -414,19 +418,22 @@ scripts/setup.sh
 scripts\setup.bat
 ```
 
-Does three things, each independent of the others:
+Does four things, each independent of the others:
 
-1. Fetches the pinned Doxygen (`cmake/FetchDoxygen.cmake`) -- needed for
+1. Fetches the pinned Ninja (`cmake/FetchNinja.cmake`) -- used by
+   `scripts/build.sh`/`build.bat` if present (see "Build" below); not
+   required, a system Ninja works fine too.
+2. Fetches the pinned Doxygen (`cmake/FetchDoxygen.cmake`) -- needed for
    `scripts/docs.sh`, not for building the project.
-2. Checks for `clang-format`/`clang-tidy` on `PATH` and prints
+3. Checks for `clang-format`/`clang-tidy` on `PATH` and prints
    OS-appropriate install guidance if either is missing (never
    auto-installs -- that would need assumptions about your package
    manager and elevated privileges this script shouldn't assume it has).
-3. Activates the pre-commit hook for this clone, if it's a git repository
+4. Activates the pre-commit hook for this clone, if it's a git repository
    (`git config core.hooksPath .githooks`).
 
 Safe to re-run any time -- each step is a no-op if there's nothing to do
-(e.g. the pinned Doxygen is already cached).
+(e.g. the pinned Ninja/Doxygen are already cached).
 
 ## Build
 
@@ -438,6 +445,26 @@ scripts/build.sh Debug       # or Debug / RelWithDebInfo / MinSizeRel
 scripts\build.bat
 scripts\build.bat Debug
 ```
+
+Picks a generator in this order, each falling back to the next:
+
+1. **A pinned Ninja**, if `scripts/setup.sh`/`setup.bat` has fetched one --
+   passed to CMake explicitly via `-DCMAKE_MAKE_PROGRAM=...` so it's used
+   even if a different Ninja also happens to be on `PATH` (same "always
+   the pinned copy" preference as Doxygen -- see "Documentation" above).
+2. **A system Ninja**, if one is on `PATH` and no pinned copy was found.
+3. **CMake's own default generator** for the platform, if neither Ninja is
+   available anywhere -- `scripts/build.sh`/`build.bat` print a warning
+   and continue rather than fail. (`CMakeLists.txt` separately warns too,
+   once CMake reports which generator it actually picked -- this is the
+   pre-existing "This project targets Ninja" message, unrelated to this
+   script.)
+
+Verified concretely, not assumed: with neither a pinned nor a system Ninja
+present anywhere, `scripts/build.sh` still successfully configures, builds,
+and produces working binaries -- it just uses whatever CMake's default
+generator is for the platform (Unix Makefiles on Linux, typically NMake or
+a Visual Studio generator on Windows) instead.
 
 ## Run
 
