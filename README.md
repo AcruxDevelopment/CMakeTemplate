@@ -1,4 +1,4 @@
-# DemoApp — a generator-friendly CMake module system
+# CMakeTemplate
 
 A small template project (one shared library, two executables, one
 vendored dependency, one fetched dependency) that demonstrates a CMake
