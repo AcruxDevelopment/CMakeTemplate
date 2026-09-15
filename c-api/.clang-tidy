@@ -20,7 +20,7 @@ CheckOptions:
   # --- C API naming — style guide §13 ---
   # Every public symbol uses snake_case with a library/module prefix
   # (e.g. net_manager_connect, NET_MAX_RETRIES). clang-tidy can enforce the
-  # casing; the prefix itself is a code-review convention (see TOOLING.md).
+  # casing; the prefix itself is a code-review convention.
   - key: readability-identifier-naming.FunctionCase
     value: lower_case
   - key: readability-identifier-naming.VariableCase

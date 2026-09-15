@@ -12,16 +12,28 @@
 # Usage (from the project root):
 #   scripts/install.sh [BUILD_TYPE]
 #
-#   BUILD_TYPE  Debug|Release|RelWithDebInfo|MinSizeRel (default: Release) --
+#   BUILD_TYPE  Debug|Release|RelWithDebInfo|MinSizeRel
+#               (default: Configuration.cmake's DEFAULT_BUILD_TYPE) --
 #               only relevant for a Ninja Multi-Config build.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+command -v cmake >/dev/null 2>&1 || { echo "error: cmake not found on PATH." >&2; exit 1; }
+
+# Reads values out of Configuration.cmake -- this project's single source
+# of truth -- via cmake/PrintConfig.cmake, instead of hardcoding a second
+# copy that can silently drift out of sync. This is exactly the bug it
+# replaces: COMPONENT used to be a literal "demo" here, with a comment
+# warning it had to be kept in sync with PROJECT_CODE_NAME by hand.
+_pmn_read_config() {
+    cmake "-DPRINT_VARS=$1" -P cmake/PrintConfig.cmake | sed -E 's/^-- [^=]*=//'
+}
+
 BUILD_DIR="${BUILD_DIR:-out/build}"
-BUILD_TYPE="${1:-Release}"
-COMPONENT="demo"  # must match PROJECT_CODE_NAME in CMakeLists.txt
+BUILD_TYPE="${1:-$(_pmn_read_config DEFAULT_BUILD_TYPE)}"
+COMPONENT="$(_pmn_read_config PROJECT_CODE_NAME)"
 
 if [ ! -d "$BUILD_DIR" ]; then
     echo "error: '${BUILD_DIR}' not found. Run scripts/build.sh first." >&2

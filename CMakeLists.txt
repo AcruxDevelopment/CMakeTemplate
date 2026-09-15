@@ -8,14 +8,15 @@ project(
     LANGUAGES CXX
 )
 
-# Machine-friendly identifier baked into every target as PROJECT_NAME_CODE
-# (used by BuildHelpers.cmake's _finalize_module_target). Edit this
-# alongside the project() call above when retargeting this template.
-set(PROJECT_CODE_NAME "demo")
-
-# All output-path configuration (out/, install/, dist/, docs/, and the
-# bin/lib subdirectory names) lives in Configuration.cmake -- included
-# early since the output-directory setup just below depends on it.
+# This project's identity (PROJECT_CODE_NAME, DEFAULT_BUILD_TYPE), target
+# selection (DIST_TARGET/PLATFORM/ARCHITECTURE/COMPILER_ID), and output-path
+# configuration (out/, install/, dist/, docs/, and the bin/lib subdirectory
+# names) all live in Configuration.cmake -- included immediately after
+# project() since it needs real compiler detection (for DIST_TARGET
+# auto-detection) and since everything below depends on it. See that file
+# for the full model; edit it, or pass -D<NAME>=... at configure time,
+# rather than hardcoding a value it already owns anywhere else in this
+# project, scripts included.
 include("${CMAKE_CURRENT_SOURCE_DIR}/Configuration.cmake")
 
 set(CMAKE_CXX_STANDARD 20)
@@ -45,9 +46,9 @@ endif()
 # Ninja Multi-Config uses CMAKE_CONFIGURATION_TYPES instead (no BUILD_TYPE needed).
 if(CMAKE_GENERATOR STREQUAL "Ninja")
     if(NOT CMAKE_BUILD_TYPE)
-        set(CMAKE_BUILD_TYPE "Release" CACHE STRING
+        set(CMAKE_BUILD_TYPE "${DEFAULT_BUILD_TYPE}" CACHE STRING
             "Build type (Debug|Release|RelWithDebInfo|MinSizeRel)" FORCE)
-        message(STATUS "CMAKE_BUILD_TYPE not set -- defaulting to Release")
+        message(STATUS "CMAKE_BUILD_TYPE not set -- defaulting to ${DEFAULT_BUILD_TYPE}")
     endif()
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
         Debug Release RelWithDebInfo MinSizeRel)
@@ -110,76 +111,11 @@ message(STATUS "BUILD_EXAMPLES   = ${BUILD_EXAMPLES}")
 message(STATUS "BUILD_SHARED_LIBS (default lib TYPE) = ${BUILD_SHARED_LIBS}")
 
 # -------------------------------------------------------
-# DIST_TARGET resolution
-#
-# Preferred: pass -DDIST_TARGET=<value> explicitly, or use a CMakePresets.json
-# preset (Visual Studio and CLion pick these up automatically).
-#
-# Fallback: if DIST_TARGET is not set, auto-detect from the compiler and
-# platform. This keeps the project openable directly in an IDE without any
-# preset selected, at the cost of skipping architecture validation.
-#
-# Valid explicit values:
-#   linux-x64-gcc     linux-x64-clang
-#   windows-x64-msvc  windows-x64-clang
-# -------------------------------------------------------
-if(NOT DIST_TARGET)
-    if(WIN32)
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-            set(DIST_TARGET "windows-x64-clang")
-        else()
-            # cl.exe reports MSVC; treat anything else on Windows as MSVC too.
-            set(DIST_TARGET "windows-x64-msvc")
-        endif()
-    else()
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            set(DIST_TARGET "linux-x64-gcc")
-        else()
-            set(DIST_TARGET "linux-x64-clang")
-        endif()
-    endif()
-    message(STATUS "DIST_TARGET not set -- auto-detected: ${DIST_TARGET}")
-    message(STATUS "  (use CMakePresets.json or -DDIST_TARGET=<value> to set it explicitly)")
-else()
-    message(STATUS "DIST_TARGET    = ${DIST_TARGET}")
-endif()
-
-# -------------------------------------------------------
-# Platform / compiler metadata from DIST_TARGET
-# -------------------------------------------------------
-if(DIST_TARGET STREQUAL "linux-x64-gcc")
-    set(PLATFORM "linux")
-    set(ARCHITECTURE "x64")
-    set(COMPILER_ID "gcc")
-elseif(DIST_TARGET STREQUAL "linux-x64-clang")
-    set(PLATFORM "linux")
-    set(ARCHITECTURE "x64")
-    set(COMPILER_ID "clang")
-elseif(DIST_TARGET STREQUAL "windows-x64-msvc")
-    set(PLATFORM "windows")
-    set(ARCHITECTURE "x64")
-    set(COMPILER_ID "msvc")
-elseif(DIST_TARGET STREQUAL "windows-x64-clang")
-    set(PLATFORM "windows")
-    set(ARCHITECTURE "x64")
-    set(COMPILER_ID "clang")
-else()
-    message(FATAL_ERROR
-        "Unsupported DIST_TARGET: '${DIST_TARGET}'.\n"
-        "Valid values: linux-x64-gcc  linux-x64-clang  "
-        "windows-x64-msvc  windows-x64-clang\n"
-        "Tip: open CMakePresets.json in your IDE to select a preset, "
-        "or pass -DDIST_TARGET=<value> on the command line.")
-endif()
-
-message(STATUS "Platform     = ${PLATFORM}")
-message(STATUS "Architecture = ${ARCHITECTURE}")
-message(STATUS "Compiler     = ${COMPILER_ID} (${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION})")
-
-# -------------------------------------------------------
 # Global compiler settings
-# MSVC is TRUE for both cl.exe and clang-cl (Clang targeting the MSVC ABI),
-# so this block covers both Windows compiler variants.
+#
+# MSVC is TRUE for both cl.exe and clang-cl (windows-x64-msvc and
+# windows-x64-clang-cl -- Clang targeting the MSVC ABI), so this block
+# covers both Windows compiler variants with MSVC-style flags.
 #
 # /MP              -- parallel file compilation (Windows only; guarded
 #                     because Ninja drives parallelism on Linux and
@@ -194,6 +130,79 @@ if(MSVC)
     endif()
     add_compile_options(/EHsc /Zc:preprocessor /utf-8)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
+# -------------------------------------------------------
+# MinGW runtime linking (windows-x86-mingw32 / windows-x64-mingw64)
+#
+# A MinGW build dynamically links libgcc/libstdc++/(on some distributions)
+# libwinpthread by default, which then have to ship alongside the binary
+# or sit on PATH -- easy to forget, and the exact DLL names differ between
+# mingw32 and mingw64. Statically linking them instead trades a slightly
+# larger binary for one that runs standalone, which is what you want for
+# anything actually distributed. Verified directly (objdump -p on the
+# result): this combination drops every non-Windows-system DLL from the
+# import table, whether the toolchain's thread model is win32
+# (libwinpthread isn't linked in the first place; -static is then a no-op
+# for it) or posix (it is, and -static covers it). MINGW is CMake's
+# built-in equivalent of this project's own COMPILER_ID being "mingw32"
+# or "mingw64".
+#
+# EXECUTABLE targets only, deliberately, via a generator expression
+# rather than a plain add_link_options() -- add_lib_module's SHARED
+# targets (e.g. core_lib -- see source/Core/CMakeLists.txt) build with
+# WINDOWS_EXPORT_ALL_SYMBOLS ON (BuildHelpers.cmake), which re-exports
+# every symbol a statically-linked libgcc/libstdc++ would pull in,
+# unwinder included. A dependent executable that *also* statically links
+# the unwinder then collides with the copy the DLL already re-exports:
+# "multiple definition of `_Unwind_Resume'". Confirmed directly (this
+# project's demo_core + hello/farewell fail to link with that error if
+# this is widened to every target) -- shared library modules keep the
+# default dynamic runtime; only the final executables that link against
+# them go fully static.
+#
+# That leaves every SHARED target still dynamically depending on exactly
+# the DLLs the executables no longer need -- confirmed directly too: an
+# executable built this way starts fine standalone, but loading a sibling
+# SHARED module next to it fails (module not found) without them.
+# PMN_MINGW_RUNTIME_DLLS resolves the actual files so BuildHelpers.cmake's
+# add_lib_module can copy them next to every SHARED target (both in the
+# build tree and at install time -- see the "install" section below),
+# rather than making SHARED targets static too, which would hit the exact
+# same symbol collision as above, just from the other direction. The
+# filename varies by exception model (SEH on x86_64; DWARF-2 or SJLJ on
+# i686) and by whether this toolchain uses posix threads, so each
+# candidate is resolved by asking the compiler rather than hardcoding
+# one -- -print-file-name=NAME echoes NAME back unchanged if it can't
+# find it, which is how "not applicable to this toolchain" is detected
+# below. Computed once, here, rather than per SHARED module, since it's
+# the same toolchain-wide answer every time.
+# -------------------------------------------------------
+if(MINGW)
+    add_link_options(
+        "$<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:-static-libgcc;-static-libstdc++;-static;-lwinpthread>"
+    )
+
+    set(PMN_MINGW_RUNTIME_DLLS "")
+    foreach(_pmn_dll_candidate
+        libgcc_s_seh-1.dll
+        libgcc_s_dw2-1.dll
+        libgcc_s_sjlj-1.dll
+        libstdc++-6.dll
+        libwinpthread-1.dll
+    )
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=${_pmn_dll_candidate}
+            OUTPUT_VARIABLE _pmn_resolved_dll
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        if(EXISTS "${_pmn_resolved_dll}")
+            list(APPEND PMN_MINGW_RUNTIME_DLLS "${_pmn_resolved_dll}")
+        endif()
+    endforeach()
+    if(PMN_MINGW_RUNTIME_DLLS)
+        message(STATUS "MinGW runtime DLLs (bundled next to SHARED targets): ${PMN_MINGW_RUNTIME_DLLS}")
+    endif()
 endif()
 
 # -------------------------------------------------------
@@ -314,6 +323,18 @@ if(_pmn_primary_targets)
         ARCHIVE DESTINATION ${ARCHIVE_OUT_DIR}
         LIBRARY DESTINATION ${LIBRARY_OUT_DIR}
         RUNTIME DESTINATION ${RUNTIME_OUT_DIR}
+    )
+endif()
+
+# MinGW SHARED targets (see the "MinGW runtime linking" comment above) --
+# installed as plain files, alongside the DLLs above, rather than as
+# TARGETS, since they're not CMake targets this project defines. RUNTIME,
+# not LIBRARY: a .dll is a runtime artifact on Windows no matter which
+# install()-TARGETS category built it.
+if(PMN_MINGW_RUNTIME_DLLS)
+    install(FILES ${PMN_MINGW_RUNTIME_DLLS}
+        COMPONENT ${PROJECT_CODE_NAME}
+        DESTINATION ${RUNTIME_OUT_DIR}
     )
 endif()
 

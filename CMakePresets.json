@@ -1,0 +1,93 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/out/build",
+            "generator": "Ninja"
+        },
+        {
+            "name": "linux-x64-gcc",
+            "inherits": "base",
+            "displayName": "Linux x64 (GCC)",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+            "cacheVariables": {
+                "DIST_TARGET": "linux-x64-gcc",
+                "CMAKE_CXX_COMPILER": "g++"
+            }
+        },
+        {
+            "name": "linux-x64-clang",
+            "inherits": "base",
+            "displayName": "Linux x64 (Clang)",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+            "cacheVariables": {
+                "DIST_TARGET": "linux-x64-clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "windows-x64-msvc",
+            "inherits": "base",
+            "displayName": "Windows x64 (MSVC)",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "cacheVariables": {
+                "DIST_TARGET": "windows-x64-msvc"
+            }
+        },
+        {
+            "name": "windows-x64-clang-cl",
+            "inherits": "base",
+            "displayName": "Windows x64 (clang-cl)",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "cacheVariables": {
+                "DIST_TARGET": "windows-x64-clang-cl",
+                "CMAKE_CXX_COMPILER": "clang-cl"
+            }
+        },
+        {
+            "name": "windows-x64-clang",
+            "inherits": "base",
+            "displayName": "Windows x64 (Clang, GNU-style)",
+            "description": "Clang with its own GNU-style driver, e.g. from an MSYS2 CLANG64 shell -- assumes that environment's clang++ is what's on PATH, distinct from clang-cl above",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "cacheVariables": {
+                "DIST_TARGET": "windows-x64-clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "windows-x86-mingw32",
+            "inherits": "base",
+            "displayName": "Windows x86 (MinGW32)",
+            "description": "Assumes a 32-bit MinGW g++ (e.g. an MSYS2 MINGW32 shell, or a standalone i686-w64-mingw32 cross toolchain) is what's on PATH as CMAKE_CXX_COMPILER",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "cacheVariables": {
+                "DIST_TARGET": "windows-x86-mingw32",
+                "CMAKE_CXX_COMPILER": "i686-w64-mingw32-g++"
+            }
+        },
+        {
+            "name": "windows-x64-mingw64",
+            "inherits": "base",
+            "displayName": "Windows x64 (MinGW-w64)",
+            "description": "Assumes a 64-bit MinGW-w64 g++ (e.g. an MSYS2 MINGW64 shell, or a standalone x86_64-w64-mingw32 cross toolchain) is what's on PATH as CMAKE_CXX_COMPILER",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "cacheVariables": {
+                "DIST_TARGET": "windows-x64-mingw64",
+                "CMAKE_CXX_COMPILER": "x86_64-w64-mingw32-g++"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "linux-x64-gcc", "configurePreset": "linux-x64-gcc" },
+        { "name": "linux-x64-clang", "configurePreset": "linux-x64-clang" },
+        { "name": "windows-x64-msvc", "configurePreset": "windows-x64-msvc" },
+        { "name": "windows-x64-clang-cl", "configurePreset": "windows-x64-clang-cl" },
+        { "name": "windows-x64-clang", "configurePreset": "windows-x64-clang" },
+        { "name": "windows-x86-mingw32", "configurePreset": "windows-x86-mingw32" },
+        { "name": "windows-x64-mingw64", "configurePreset": "windows-x64-mingw64" }
+    ]
+}

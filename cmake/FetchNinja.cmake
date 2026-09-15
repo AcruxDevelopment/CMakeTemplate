@@ -16,13 +16,17 @@
 # pinned version is already present.
 # =============================================================================
 
-# TOOLCACHE_DIR normally comes from Configuration.cmake, which isn't loaded
-# in this standalone script-mode invocation -- match its default here. If
-# you've overridden TOOLCACHE_DIR via -DTOOLCACHE_DIR=... at configure time,
-# pass the same value here: cmake -DTOOLCACHE_DIR=... -P cmake/FetchNinja.cmake
+# TOOLCACHE_DIR normally comes from Configuration.cmake, which isn't
+# loaded in this standalone script-mode invocation -- read it from there
+# directly (in query mode, so we get just the value, none of
+# Configuration.cmake's normal configure-time side effects) rather than
+# hardcoding a second copy of its default. If you've overridden
+# TOOLCACHE_DIR via -DTOOLCACHE_DIR=... at configure time, pass the same
+# value here to match: cmake -DTOOLCACHE_DIR=... -P cmake/FetchNinja.cmake
 if(NOT DEFINED TOOLCACHE_DIR)
-    get_filename_component(_pmn_project_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-    set(TOOLCACHE_DIR "${_pmn_project_root}/.cache/tools")
+    set(PMN_CONFIG_QUERY_ONLY TRUE)
+    get_filename_component(CMAKE_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+    include("${CMAKE_SOURCE_DIR}/Configuration.cmake")
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/NinjaPin.cmake")

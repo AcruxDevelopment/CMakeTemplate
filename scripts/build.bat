@@ -2,9 +2,26 @@
 REM Configure (if needed) and build the project, preferably with Ninja.
 REM
 REM Usage (from the project root):
-REM   scripts\build.bat [BUILD_TYPE]
+REM   scripts\build.bat [BUILD_TYPE] [CMAKE_ARGS...]
 REM
-REM   BUILD_TYPE  Debug^|Release^|RelWithDebInfo^|MinSizeRel (default: Release)
+REM   BUILD_TYPE   Debug^|Release^|RelWithDebInfo^|MinSizeRel
+REM                (default: Configuration.cmake's DEFAULT_BUILD_TYPE)
+REM   CMAKE_ARGS   Anything else is forwarded to `cmake` verbatim at
+REM                configure time, e.g. to pick a target or turn an
+REM                option on:
+REM                  scripts\build.bat Debug -DDIST_TARGET=windows-x64-mingw64
+REM                  scripts\build.bat -DBUILD_TESTS=ON
+REM                            (BUILD_TYPE omitted -- the default is used;
+REM                            recognized by not starting with "-")
+REM
+REM cmd.exe splits %1, %2, ... (and SHIFT) on space, comma, semicolon, AND
+REM "=" -- type "-DFOO=BAR" as an argument and it arrives as TWO separate
+REM parameters, %1=-DFOO %2=BAR, silently, with no way to tell after the
+REM fact. This script never reads a "="-laden argument through %1 or
+REM SHIFT; everything is peeled off of the raw, unsplit %* instead using
+REM FOR /F (which only ever splits on space/tab), so "=" survives intact
+REM -- see :parse_args below. (bash's "$@"/shift has no such bug -- see
+REM build.sh for that half of this same feature.)
 REM
 REM Set BUILD_DIR to build somewhere other than out\build (see Configuration.cmake).
 setlocal enabledelayedexpansion
@@ -12,15 +29,33 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
 if "%BUILD_DIR%"=="" set "BUILD_DIR=out\build"
-set "BUILD_TYPE=%~1"
-if "%BUILD_TYPE%"=="" set "BUILD_TYPE=Release"
-if "%TOOLCACHE_DIR%"=="" set "TOOLCACHE_DIR=.cache\tools"
 
 where cmake >nul 2>nul
 if errorlevel 1 (
     echo error: cmake not found on PATH.
     exit /b 1
 )
+
+REM See the header comment above for why this doesn't use %1/SHIFT.
+set "ALL_ARGS=%*"
+set "BUILD_TYPE="
+set "EXTRA_ARGS="
+if not defined ALL_ARGS goto args_done
+
+for /f "tokens=1,* delims= " %%A in ("%ALL_ARGS%") do (
+    set "_FIRST=%%A"
+    set "_REST=%%B"
+)
+if "%_FIRST:~0,1%"=="-" (
+    set "EXTRA_ARGS=%ALL_ARGS%"
+) else (
+    set "BUILD_TYPE=%_FIRST%"
+    set "EXTRA_ARGS=%_REST%"
+)
+
+:args_done
+if "%BUILD_TYPE%"=="" call :read_config DEFAULT_BUILD_TYPE BUILD_TYPE
+if "%TOOLCACHE_DIR%"=="" call :read_config TOOLCACHE_DIR TOOLCACHE_DIR
 
 REM Prefer a pinned ninja (fetched by scripts\setup.bat -- see
 REM cmake\FetchNinja.cmake) over a system one, same "always the pinned
@@ -60,7 +95,8 @@ set "GENERATOR_ARGS="
 
 :configure
 echo ==^> Configuring (%BUILD_TYPE%) into %BUILD_DIR%\
-cmake %GENERATOR_ARGS% -S . -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=%BUILD_TYPE%
+if defined EXTRA_ARGS echo     Extra CMake arguments: %EXTRA_ARGS%
+cmake %GENERATOR_ARGS% -S . -B "%BUILD_DIR%" -DCMAKE_BUILD_TYPE=%BUILD_TYPE% %EXTRA_ARGS%
 if errorlevel 1 exit /b 1
 
 echo ==^> Building
@@ -69,3 +105,20 @@ if errorlevel 1 exit /b 1
 
 echo ==^> Done. Run a module with:  scripts\run.bat ^<target-name^>
 exit /b 0
+
+REM ---------------------------------------------------------------------
+REM :read_config <ConfigurationVarName> <LocalVarName>
+REM
+REM Reads one value out of Configuration.cmake -- this project's single
+REM source of truth -- via cmake\PrintConfig.cmake, instead of hardcoding
+REM a second copy of a default that can silently drift out of sync, and
+REM stores it into %2 in the CALLER's scope. See cmake\PrintConfig.cmake
+REM for exactly what's being stripped off of its output below.
+REM ---------------------------------------------------------------------
+:read_config
+setlocal
+set "_pmn_line="
+for /f "usebackq delims=" %%V in (`cmake "-DPRINT_VARS=%~1" -P cmake\PrintConfig.cmake`) do set "_pmn_line=%%V"
+for /f "tokens=1,* delims==" %%A in ("%_pmn_line%") do set "_pmn_value=%%B"
+endlocal & set "%~2=%_pmn_value%"
+goto :eof

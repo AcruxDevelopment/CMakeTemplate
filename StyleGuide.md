@@ -480,7 +480,7 @@ private:
 };
 ```
 
-None of this is mechanically enforced — `readability-redundant-inline-specifier` (see `.clang-tidy`) catches one narrow related mistake (a redundant explicit `inline` keyword) but not the member-order or inline-body rules themselves. See TOOLING.md.
+None of this is mechanically enforced — `readability-redundant-inline-specifier` (see `.clang-tidy`) catches one narrow related mistake (a redundant explicit `inline` keyword) but not the member-order or inline-body rules themselves.
 
 ---
 

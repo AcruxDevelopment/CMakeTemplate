@@ -3,7 +3,7 @@
 # Enforces the formatting rules from the C/C++ Coding Style Guide (Part I: C++ Style).
 # Applies equally to Part II C API files per §15 (Indentation and Braces) — same
 # tabs/Allman/line-length rules, just different naming (naming can't be enforced
-# by clang-format; see .clang-tidy and TOOLING.md).
+# by clang-format; see .clang-tidy).
 Language: Cpp
 Standard: Latest
 

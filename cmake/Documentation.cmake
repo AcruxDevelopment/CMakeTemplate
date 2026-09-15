@@ -2,37 +2,6 @@
 # Documentation.cmake
 #
 # Automatic, per-module Doxygen documentation, using a pinned Doxygen
-# version this project downloads and manages itself -- never your
-# system's doxygen, so every machine gets identical output. Zero setup
-# required: every module registered via add_lib_module/add_exe_module/
-# add_test_module/add_example_module gets its own documentation target
-# for free -- nothing to add to a module's own CMakeLists.txt. Vendored
-# and fetched dependencies (cmake/Dependencies.cmake) are never
-# auto-documented, same reasoning as their compile_commands.json
-# exclusion: it's not your code.
-#
-# What gets generated, per module <target>:
-#   out/docs/<target>/html/index.html   -- via `cmake --build <build-dir> --target docs_<target>`
-# Plus one landing page linking to all of them:
-#   out/docs/index.html                 -- via `cmake --build <build-dir> --target docs`
-# (or just run scripts/docs.sh / docs.bat, which builds `docs` and prints the path)
-# Paths above use the defaults from Configuration.cmake (DOCS_OUTPUT_DIR).
-#
-# Configuring it:
-#   -DENABLE_DOXYGEN=OFF                disable entirely (skips the download too)
-#   -DDOXYGEN_PINNED_VERSION=1.17.0     use a different pinned version (also
-#       update the two SHA256 hashes below to match that release's assets)
-#   -DDOXYGEN_WARN_IF_UNDOCUMENTED=YES / -DDOXYGEN_QUIET=NO   stricter/louder output
-#   -DDOXYGEN_<ANY_DOXYFILE_TAG>=...    any Doxyfile tag can be set this way --
-#       see https://www.doxygen.nl/manual/config.html
-# A module can opt out with NO_DOCS, e.g.:
-#   add_lib_module(core_lib TYPE SHARED NO_DOCS ...)
-# =============================================================================
-
-# =============================================================================
-# Documentation.cmake
-#
-# Automatic, per-module Doxygen documentation, using a pinned Doxygen
 # version -- never your system's doxygen, so every machine gets identical
 # output. Zero setup required at the CMakeLists.txt level: every module
 # registered via add_lib_module/add_exe_module/add_test_module/

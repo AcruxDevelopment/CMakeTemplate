@@ -265,6 +265,21 @@ macro(add_lib_module NAME)
         # Remove if you prefer explicit visibility macros instead.
         _set_output_dirs(${NAME} "${CMAKE_BINARY_DIR}/${RUNTIME_OUTPUT_SUBDIR}" "${CMAKE_BINARY_DIR}/${LIBRARY_OUTPUT_SUBDIR}")
         set_target_properties(${NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
+        # MinGW builds keep this target dynamically linked to
+        # libgcc/libstdc++ (see CMakeLists.txt's "MinGW runtime linking"
+        # comment for why); copy those DLLs next to it in the build tree
+        # so it runs without a manual step. install()-time placement is
+        # the matching install(FILES ...) in CMakeLists.txt's "install"
+        # section -- PMN_MINGW_RUNTIME_DLLS is empty on every other
+        # platform, so this is a no-op there.
+        if(MINGW AND PMN_MINGW_RUNTIME_DLLS)
+            add_custom_command(TARGET ${NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PMN_MINGW_RUNTIME_DLLS} "$<TARGET_FILE_DIR:${NAME}>"
+                COMMENT "Copying MinGW runtime DLLs next to ${NAME}"
+                VERBATIM
+            )
+        endif()
     endif()
 
     _register_module_target(PRIMARY ${NAME})
