@@ -57,7 +57,7 @@ Configuration.cmake      Source of truth: identity, DIST_TARGET, output paths
 CMakeLists.txt            Root build: options, compiler settings, module
                           discovery, install rules -- rarely needs editing
 CMakePresets.json         One preset per supported DIST_TARGET, for IDEs
-cpp-style-guide.md        The C++ style guide .clang-format/.clang-tidy enforce
+StyleGuide.md             The C++ style guide .clang-format/.clang-tidy enforce
 
 cmake/
   BuildHelpers.cmake       add_lib_module / add_exe_module / add_test_module /
@@ -347,7 +347,7 @@ mainpage automatically.
 
 ## Code style & tooling
 
-This project follows [`cpp-style-guide.md`](cpp-style-guide.md),
+This project follows [`StyleGuide.md`](StyleGuide.md),
 enforced by:
 
 - **`.clang-format`** — formatting (indentation, brace style, line
